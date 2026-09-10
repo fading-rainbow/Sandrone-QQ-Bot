@@ -1,0 +1,11 @@
+.env
+.venv/
+.venv-win/
+.venv-wsl/
+.venv310/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+data/
+logs/

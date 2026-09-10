@@ -1,0 +1,37 @@
+[Unit]
+Description=sandrone QQ chatbot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sandrone
+Group=sandrone
+WorkingDirectory=/opt/sandrone-bot
+EnvironmentFile=/opt/sandrone-bot/.env
+ExecStart=/opt/sandrone-bot/.venv/bin/python -m talk_bot.main
+Restart=always
+RestartSec=5
+TimeoutStopSec=20
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectClock=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+UMask=0077
+ReadWritePaths=/opt/sandrone-bot/data
+MemoryMax=300M
+
+[Install]
+WantedBy=multi-user.target

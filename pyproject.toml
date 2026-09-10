@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sandrone-qq-bot"
+version = "0.1.0"
+description = "A resource-efficient QQ chatbot with persistent SQLite memory"
+requires-python = ">=3.10"
+dependencies = [
+  "openai>=2.8,<3",
+  "pillow>=11,<13",
+  "python-dotenv>=1.1,<2",
+  "qqbot-agent-sdk==1.2.2",
+]
+
+[project.scripts]
+sandrone-bot = "talk_bot.main:run"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
