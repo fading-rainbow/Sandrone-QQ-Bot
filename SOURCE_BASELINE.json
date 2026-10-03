@@ -1,41 +1,54 @@
 {
   "project": "Sandrone-QQ-Bot",
-  "source_kind": "current local application source; universal person reference grounding developed and locally validated; production baseline recorded separately",
+  "source_kind": "current local application source; universal person reference grounding deployed and live verified; production source release distinct from later development documentation",
   "development_base": null,
   "production": {
     "type": "systemd Python source",
-    "application_files": 9,
+    "application_files": 11,
     "identity_defaults": "environment-only in public source",
-    "source_commit": "3fd44049de6131f242bfea0c9e4a9f3390a77c7e",
-    "release_tag": "sandrone-gemini38-sunburst-20261003",
-    "verified_at": "2026-10-03T03:16:44.051471+00:00",
+    "source_commit": "9c99cf3584077619a89fa9712be401c3f3a0930d",
+    "release_tag": "sandrone-person-grounding-20261003",
+    "verified_at": "2026-10-03T05:25:45.296746+00:00",
     "image_model": "gpt-image-2.5-sunburst",
     "language_model": "gemini-3.8-flash",
     "application_sha256": {
+      "src/talk_bot/character_refs.py": "41cad0cae1c6c8eaae4eb7247df00d1a0137917574586b560a5bd6a4c0a36f07",
       "src/talk_bot/config.py": "2e1466468a0a2283d5ba8b4f40175aa9d0eaef8ba31686165629fab4fe06d051",
-      "src/talk_bot/image_gen.py": "4cff3b4ade20c959651da884fe8bfc65462ce426ffacf95a8f37d3d8f8395a0a",
+      "src/talk_bot/image_gen.py": "9627b530a57d9272b4def4505ba7368c81f3546c53e38cc90728f760ed615103",
       "src/talk_bot/image_sources.py": "cee71078498a620886aa830f594ebdc8e41da186eae8f38e89493f03d4e0292b",
       "src/talk_bot/llm.py": "0763d4472ec64198088e3fd2cdc26bc37db223999a05443c0a57b1e7b7d72de1",
-      "src/talk_bot/main.py": "84942d38c59df5c89fd89caeb7365a6529723d06f5adc0ef23edf29a22875767",
+      "src/talk_bot/main.py": "0ec74ca4d050c6939966328705aa168670eeb2379d9a111c50a3361bbcdf2ecd",
       "src/talk_bot/memory.py": "afab4e9121f4db9f931766bb27a76cfa49e302eaa1d81c1449e909cc20f7abe4",
-      "src/talk_bot/qq_adapter.py": "4fc853d4366608915549a1283b54406f210bf38dc905bf49847848596932ae61",
-      "src/talk_bot/service.py": "7dc68ca814def22f33292e3f46e0638c2927dd7a41bf385c534e52e0a212cd8e",
+      "src/talk_bot/person_lookup.py": "d0c3b6798e03485f2d39be18783f0f9a5f9e759381c2ecc3356029be4ce16a0d",
+      "src/talk_bot/qq_adapter.py": "82de5b980d9bb7eeefd6d3612b9c1a18e60bcbcc1ad89c43a86463d268786b09",
+      "src/talk_bot/service.py": "5b2c570fd77653aa335f343b5e005d13555f12d0815a95055e0e652d29f7d887",
       "src/talk_bot/__init__.py": "5302bebadfc57a68858354513bb6ad0454baa0d778ebd12e579329ff372d8e53"
     },
     "verification": {
       "source_hashes_match": true,
       "qq_gateway_ready": true,
-      "real_image_checks_passed": 3,
-      "real_language_checks_passed": 6,
-      "post_deploy_chat_and_vision_passed": true,
-      "requested_language_model_usage_verified": true,
-      "image_credentials_and_endpoint_unchanged": true,
-      "other_chat_and_qq_configuration_unchanged": true,
-      "changed_runtime_field": "OPENAI_MODEL",
+      "startup_tracebacks": 0,
+      "systemd_restarts": 0,
+      "deployed_package_import_path_confirmed": true,
+      "preflight_checks_passed": 3,
+      "post_deploy_live_checks_passed": 4,
+      "two_person_sunburst_generation_and_identity_review_passed": true,
+      "live_generation_attempts": 1,
+      "runtime_config_changes": 0,
+      "new_dependencies": 0,
+      "image_and_chat_credentials_unchanged": true,
+      "models_unchanged": true,
       "database_or_history_replaced": false,
-      "qq_test_messages_sent": 0
+      "database_identity_unchanged": true,
+      "database_quick_check": "ok",
+      "qq_test_messages_sent": 0,
+      "production_history_written_by_checks": false
     },
-    "image_release_tag": "sandrone-image-sunburst-20261003"
+    "image_release_tag": "sandrone-image-sunburst-20261003",
+    "known_limitations": [
+      "Auto public lookup uses HoYoWiki and Chinese/English Wikipedia; ambiguous/unavailable people need supplied references",
+      "Some cross-identity requests can be rejected by upstream image moderation; failed images are not delivered"
+    ]
   },
   "public_sanitization": [
     "src/talk_bot/config.py"
