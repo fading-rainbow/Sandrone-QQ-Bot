@@ -138,7 +138,7 @@ class Settings:
             qq_app_secret=os.getenv("QQ_APP_SECRET", "").strip(),
             openai_api_key=openai_api_key,
             openai_base_url=openai_base_url,
-            openai_model=os.getenv("OPENAI_MODEL", "gemini-3-flash").strip(),
+            openai_model=os.getenv("OPENAI_MODEL", "gemini-3.8-flash").strip(),
             image_model=os.getenv("IMAGE_MODEL", "gpt-image-2.5-sunburst").strip(),
             image_api_key=os.getenv("IMAGE_API_KEY", "").strip() or openai_api_key,
             image_base_url=(

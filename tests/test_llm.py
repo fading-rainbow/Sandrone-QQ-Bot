@@ -22,9 +22,10 @@ def test_partial_responses_output_is_rejected():
         LLMClient._require_complete(SimpleNamespace(status="incomplete"), "summary")
 
 
-def test_gemini_reserves_thinking_without_changing_other_models():
+@pytest.mark.parametrize("model", ["gemini-3-flash", "gemini-3.8-flash"])
+def test_gemini_reserves_thinking_without_changing_other_models(model):
     client = object.__new__(LLMClient)
-    client.model = "gemini-3-flash"
+    client.model = model
     assert client._completion_budget(350) == 4446
     assert client._completion_budget(16) == 4112
     client.model = "gpt-test"

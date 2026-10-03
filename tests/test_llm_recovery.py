@@ -10,8 +10,8 @@ import httpx
 import pytest
 from PIL import Image
 
-from talk_bot.llm import LLMClient
 import talk_bot.llm as llm_module
+from talk_bot.llm import LLMClient
 from talk_bot.memory import StoredMessage
 
 
@@ -41,13 +41,14 @@ async def _close(client):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("model", ["gemini-3-flash", "gemini-3.8-flash"])
 @pytest.mark.parametrize("first", [
     _completion("原文、摘要，再", "length"),
     _completion(None),
     _completion("   "),
 ])
-async def test_gemini_recovers_incomplete_or_empty_once_with_same_budget(first):
-    client = _make_client()
+async def test_gemini_recovers_incomplete_or_empty_once_with_same_budget(first, model):
+    client = _make_client(model=model)
     create = AsyncMock(side_effect=[first, _completion("8分，分层清楚。")])
     client.client.chat.completions.create = create
     message = StoredMessage("user", "评价我的记忆设计")

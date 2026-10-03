@@ -41,13 +41,22 @@ def clean_settings_env(monkeypatch):
     return monkeypatch
 
 
-def test_default_image_model_changes_without_changing_chat_default(clean_settings_env):
+def test_requested_chat_and_image_defaults_use_independent_backends(clean_settings_env):
     settings = Settings.from_env(require_secrets=False)
 
     assert settings.image_model == SUNBURST
-    assert settings.openai_model == "gemini-3-flash"
+    assert settings.openai_model == "gemini-3.8-flash"
     assert settings.image_api_key == settings.openai_api_key == ""
     assert settings.image_base_url == settings.openai_base_url == "https://api.openai.com/v1"
+
+
+def test_legacy_chat_override_does_not_change_sunburst_default(clean_settings_env):
+    clean_settings_env.setenv("OPENAI_MODEL", "gemini-3-flash")
+
+    settings = Settings.from_env(require_secrets=False)
+
+    assert settings.openai_model == "gemini-3-flash"
+    assert settings.image_model == SUNBURST
 
 
 def test_image_credentials_fall_back_to_chat_credentials(clean_settings_env):
@@ -101,7 +110,7 @@ def test_explicit_image_model_override_remains_supported(clean_settings_env):
     settings = Settings.from_env(require_secrets=False)
 
     assert settings.image_model == "gemini-3.1-flash-image"
-    assert settings.openai_model == "gemini-3-flash"
+    assert settings.openai_model == "gemini-3.8-flash"
 
 
 @pytest.mark.parametrize("invalid_url", ["ftp://images.example/v1", "images.example/v1"])
