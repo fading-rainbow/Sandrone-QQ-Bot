@@ -28,7 +28,7 @@ from qqbot_agent_sdk import (
 )
 from qqbot_agent_sdk.dto import parse_message
 
-from .character_refs import CharacterReferenceLibrary
+from .character_refs import CharacterReferenceLibrary, CharacterSubject
 from .image_gen import ImageContentPolicyError, ImageEditMismatch, ImageGenerator
 from .image_sources import ImageSourceCache, ImageSourceUnavailable, is_edit_request
 from .memory import ImageJobRecord
@@ -837,6 +837,11 @@ class QQBotRunner:
             getattr(incoming, "content", prompt),
             has_image=bool(getattr(incoming, "image_urls", ()) or getattr(incoming, "quoted_image_urls", ())),
         )
+        # Explicit character-reference composition is a new scene, not a numeric/layout source edit.
+        if re.search(r"(?:人物|角色|身份|长相)参考|参考(?:人物|角色|身份|长相)", prompt) and not re.search(
+            r"修改|编辑|修图|改成|改为|替换|去掉|删掉|去除|移除|抠图|扩图", prompt,
+        ):
+            editing = False
         source_paths = ()
         character_references = None
         try:
@@ -856,8 +861,31 @@ class QQBotRunner:
                 if library is not None:
                     job.phase = "核对角色参考"
                     self._update_image_job_safely(job, phase=job.phase)
-                    names = await self.service.image_character_names(incoming, prompt)
-                    character_references = await library.resolve(names)
+                    names = await self.service.image_character_names(incoming, prompt, detailed=True)
+                    urls = incoming.quoted_image_urls or incoming.image_urls
+                    if urls:
+                        selected = await self.image_sources.fetch(
+                            incoming, urls, self.service.llm._download_image_as_data_url,
+                        )
+                        source_workspace = tempfile.TemporaryDirectory(prefix="sandrone-person-refs-")
+                        workspace = Path(source_workspace.name)
+                        workspace.chmod(0o700)
+                        pinned = []
+                        for i, selected_path in enumerate(selected):
+                            target = workspace / f"supplied-{i}.png"
+                            shutil.copyfile(selected_path, target)
+                            target.chmod(0o600)
+                            pinned.append(target)
+                        refs = []
+                        for subject in names:
+                            if not isinstance(subject, CharacterSubject) or subject.reference_index is None:
+                                raise ImageSourceUnavailable("请明确各张参考图对应哪个人物，不猜图片身份。")
+                            if not 1 <= subject.reference_index <= len(pinned):
+                                raise ImageSourceUnavailable("参考图编号无法对齐。请分别重发独立图片，并明确图1、图2对应谁。")
+                            refs.append(await library.from_supplied(subject, (pinned[subject.reference_index - 1],), workspace))
+                        character_references = tuple(refs)
+                    else:
+                        character_references = await library.resolve(names)
                     resolved_prompt = await self.service.prepare_image_prompt(
                         incoming, prompt, character_references=character_references,
                     )

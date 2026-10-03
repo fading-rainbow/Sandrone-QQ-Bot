@@ -56,7 +56,7 @@ async def main() -> None:
         sandrone_reference_paths=settings.sandrone_reference_paths,
     )
     character_library = CharacterReferenceLibrary(
-        settings.generated_image_dir / "character-references", settings.sandrone_reference_paths,
+        settings.generated_image_dir / "character-references", settings.sandrone_reference_paths, model=llm,
     )
     runner = QQBotRunner(
         app_id=settings.qq_app_id,

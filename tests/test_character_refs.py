@@ -184,7 +184,7 @@ async def test_new_names_extracted_without_appearance_and_context_pronouns(tmp_p
     message = IncomingMessage("m", "group", "g", "u", "画你和她")
     assert await service.image_character_names(message, message.content) == ("桑多涅", "沃雅妮莎")
     kwargs = service.llm.reply.await_args.kwargs
-    assert "不需要知道角色是谁" in kwargs["instructions"]
+    assert "不需要预先知道人物是谁" in kwargs["instructions"]
     assert "她指沃雅妮莎" in kwargs["messages"][0].content
     service.memory.close()
 
