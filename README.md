@@ -85,6 +85,13 @@ Copy-Item .env.example .env
 - 全量群消息还要求群主在手机 QQ 的机器人设置中授予“获取群内全部消息”；否则平台只会推送 @ 消息。
 - `.env` 和 `data/` 已被 Git 忽略。不要把 AppSecret 或 API Key 提交到仓库。
 
+## 当前线上基线（2026-10-03）
+
+- 生图已切换为 `gpt-image-2.5-sunburst`，使用独立 Images API 通道；聊天与视觉复核仍为 `gemini-3-flash`。
+- 实际接口验收通过：普通生图、原图 high/PNG 编辑、携带两张桑多涅身份参考的编辑；三项结果均经过现有 Gemini 视觉复核。
+- 线上 9 个应用文件的 SHA256 与源码提交 `2b7256da70f440d0d33381ecac9314c22eb00f53` 一致；服务重启后 QQ Gateway Ready 已确认。生产版本标记为 `sandrone-image-sunburst-20261003`，详见 `SOURCE_BASELINE.json`。
+- 未替换数据库或聊天历史，未发送 QQ 测试消息；聊天凭据、QQ 配置和现有 OpenAI 分组价格未改变。独立生图凭据只保存在私有运行配置，不随源码同步。
+
 ## VPS 部署
 
 推荐路径 `/opt/sandrone-bot`，使用独立低权限用户运行：

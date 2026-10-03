@@ -1,11 +1,35 @@
 {
   "project": "Sandrone-QQ-Bot",
-  "source_kind": "current local application source; independent GPT Image 2.5 Sunburst configuration prepared; live deployment pending independent image credentials",
+  "source_kind": "current local application source; GPT Image 2.5 Sunburst deployed with independent image credentials and live acceptance verified",
   "development_base": null,
   "production": {
     "type": "systemd Python source",
     "application_files": 9,
-    "identity_defaults": "environment-only in public source"
+    "identity_defaults": "environment-only in public source",
+    "source_commit": "2b7256da70f440d0d33381ecac9314c22eb00f53",
+    "release_tag": "sandrone-image-sunburst-20261003",
+    "verified_at": "2026-10-03T03:00:20.368878+00:00",
+    "image_model": "gpt-image-2.5-sunburst",
+    "language_model": "gemini-3-flash",
+    "application_sha256": {
+      "src/talk_bot/config.py": "8deb043d430231b932047fbf37d16cf78b6025dfdbc47ef1efa4dcf3d00e3ba0",
+      "src/talk_bot/image_gen.py": "4cff3b4ade20c959651da884fe8bfc65462ce426ffacf95a8f37d3d8f8395a0a",
+      "src/talk_bot/image_sources.py": "cee71078498a620886aa830f594ebdc8e41da186eae8f38e89493f03d4e0292b",
+      "src/talk_bot/llm.py": "0763d4472ec64198088e3fd2cdc26bc37db223999a05443c0a57b1e7b7d72de1",
+      "src/talk_bot/main.py": "84942d38c59df5c89fd89caeb7365a6529723d06f5adc0ef23edf29a22875767",
+      "src/talk_bot/memory.py": "afab4e9121f4db9f931766bb27a76cfa49e302eaa1d81c1449e909cc20f7abe4",
+      "src/talk_bot/qq_adapter.py": "4fc853d4366608915549a1283b54406f210bf38dc905bf49847848596932ae61",
+      "src/talk_bot/service.py": "7dc68ca814def22f33292e3f46e0638c2927dd7a41bf385c534e52e0a212cd8e",
+      "src/talk_bot/__init__.py": "5302bebadfc57a68858354513bb6ad0454baa0d778ebd12e579329ff372d8e53"
+    },
+    "verification": {
+      "source_hashes_match": true,
+      "qq_gateway_ready": true,
+      "real_image_checks_passed": 3,
+      "chat_and_qq_configuration_unchanged": true,
+      "database_or_history_replaced": false,
+      "qq_test_messages_sent": 0
+    }
   },
   "public_sanitization": [
     "src/talk_bot/config.py"
