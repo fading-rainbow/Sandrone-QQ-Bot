@@ -393,6 +393,7 @@ async def test_edit_pipeline_uses_pixels_and_never_sends_unverified_result(tmp_p
     service.inspect_edited_image = AsyncMock(return_value=ImageInspection(outcome == "pass", "核对数字"))
     runner = _runner_for_image_test(service)
     runner.image_sources = SimpleNamespace(resolve=AsyncMock(return_value=(source,)), store=lambda *args: None)
+    runner.character_library = SimpleNamespace(resolve=AsyncMock(side_effect=AssertionError("original edit must not inject character references")))
     if outcome == "unavailable":
         runner.image_sources.resolve.side_effect = ImageSourceUnavailable("原图不可用，请重发")
     async def edit(prompt, paths):
@@ -406,6 +407,7 @@ async def test_edit_pipeline_uses_pixels_and_never_sends_unverified_result(tmp_p
     await runner._handle_image_request(event, message, message.content)
     runner.image_generator.generate.assert_not_awaited()
     service.prepare_image_prompt.assert_not_awaited()
+    runner.character_library.resolve.assert_not_awaited()
     assert runner._image_job is None
     assert store.latest_image_job("group:g1").status == ("sent" if outcome == "pass" else "failed")
     assert runner.media_uploader.upload.await_count == (1 if outcome == "pass" else 0)

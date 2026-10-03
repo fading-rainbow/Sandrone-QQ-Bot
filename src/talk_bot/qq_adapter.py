@@ -28,6 +28,7 @@ from qqbot_agent_sdk import (
 )
 from qqbot_agent_sdk.dto import parse_message
 
+from .character_refs import CharacterReferenceLibrary
 from .image_gen import ImageContentPolicyError, ImageEditMismatch, ImageGenerator
 from .image_sources import ImageSourceCache, ImageSourceUnavailable, is_edit_request
 from .memory import ImageJobRecord
@@ -219,6 +220,7 @@ class QQBotRunner:
         image_cooldown_seconds: int,
         owner_ids: frozenset[str],
         allowed_group_ids: frozenset[str],
+        character_library: CharacterReferenceLibrary | None = None,
     ) -> None:
         self.http_client = httpx.AsyncClient(timeout=60.0)
         self.api = QQApiClient(app_id=app_id, client_secret=app_secret, log_tag="sandrone")
@@ -226,6 +228,7 @@ class QQBotRunner:
         self.media_uploader = MediaUploader(self.api, self.http_client, log_tag="sandrone")
         self.service = service
         self.image_generator = image_generator
+        self.character_library = character_library
         self.image_sources = ImageSourceCache(image_generator.output_dir / "sources")
         self.image_cooldown_seconds = image_cooldown_seconds
         self.owner_ids = owner_ids
@@ -835,6 +838,7 @@ class QQBotRunner:
             has_image=bool(getattr(incoming, "image_urls", ()) or getattr(incoming, "quoted_image_urls", ())),
         )
         source_paths = ()
+        character_references = None
         try:
             if editing:
                 selected = await self.image_sources.resolve(
@@ -848,7 +852,17 @@ class QQBotRunner:
                 resolved_prompt = prompt
                 logger.info("原图编辑已绑定 job_id=%s source_count=%d", job_id, len(source_paths))
             else:
-                resolved_prompt = await self.service.prepare_image_prompt(incoming, prompt)
+                library = getattr(self, "character_library", None)
+                if library is not None:
+                    job.phase = "核对角色参考"
+                    self._update_image_job_safely(job, phase=job.phase)
+                    names = await self.service.image_character_names(incoming, prompt)
+                    character_references = await library.resolve(names)
+                    resolved_prompt = await self.service.prepare_image_prompt(
+                        incoming, prompt, character_references=character_references,
+                    )
+                else:
+                    resolved_prompt = await self.service.prepare_image_prompt(incoming, prompt)
             job.phase = "模型渲染"
             self._update_image_job_safely(job, phase=job.phase)
             progress = "原图收到了。只动你指定的地方，别催坏我的精度。" if editing else "……知道了。别催，我的人偶正在构图。"
@@ -863,8 +877,12 @@ class QQBotRunner:
                         edit_prompt += "\n上一版未通过校验，请仍从原图重新编辑，纠正这些问题：" + actual_description[:500]
                     generated = await self.image_generator.edit(edit_prompt, source_paths)
                 else:
+                    grounding = {} if character_references is None else {
+                        "character_references": character_references,
+                        "retry_feedback": actual_description if attempt else "",
+                    }
                     generated = await self.image_generator.generate(
-                        resolved_prompt, identity_retry=attempt > 0
+                        resolved_prompt, identity_retry=attempt > 0, **grounding,
                     )
                 safety_rewritten = safety_rewritten or generated.safety_rewritten
                 path = generated.path
@@ -874,8 +892,11 @@ class QQBotRunner:
                     if editing:
                         inspection = await self.service.inspect_edited_image(path, source_paths, resolved_prompt)
                     else:
+                        review_kwargs = {} if not character_references else {
+                            "character_references": character_references,
+                        }
                         inspection = await self.service.inspect_generated_image(
-                            path, resolved_prompt, generated.reference_paths
+                            path, resolved_prompt, generated.reference_paths, **review_kwargs,
                         )
                     actual_description = inspection.description
                 except Exception as exc:
@@ -892,7 +913,7 @@ class QQBotRunner:
                 if (not editing and not generated.identity_sensitive) or inspection.accepted:
                     break
                 logger.warning(
-                    "桑多涅身份复核未通过 job_id=%s attempt=%d detail=%s",
+                    "角色身份复核未通过 job_id=%s attempt=%d detail=%s",
                     job_id,
                     attempt + 1,
                     actual_description[:300],
@@ -986,7 +1007,7 @@ class QQBotRunner:
                 failure = "这次修改没通过原图核对，我没有把不合格的成图发出来。稍后可以重试，或把要改的位置说得更具体些。"
             elif isinstance(exc, ImageIdentityMismatch):
                 failure = (
-                    "这次人偶的面容仍偏离了我的参考档案。我不会把仿冒品递给你——"
+                    "这次仍有角色偏离了对应参考档案。我不会把仿冒品递给你——"
                     "工坊没有发送，稍后再让我校准。"
                 )
             elif isinstance(exc, ImageIdentityVerificationUnavailable):

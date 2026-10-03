@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from .character_refs import CharacterReferenceLibrary
 from .config import Settings
 from .image_gen import ImageGenerator
 from .llm import LLMClient
@@ -54,6 +55,9 @@ async def main() -> None:
         output_dir=settings.generated_image_dir,
         sandrone_reference_paths=settings.sandrone_reference_paths,
     )
+    character_library = CharacterReferenceLibrary(
+        settings.generated_image_dir / "character-references", settings.sandrone_reference_paths,
+    )
     runner = QQBotRunner(
         app_id=settings.qq_app_id,
         app_secret=settings.qq_app_secret,
@@ -62,6 +66,7 @@ async def main() -> None:
         image_cooldown_seconds=settings.image_cooldown_seconds,
         owner_ids=settings.owner_ids,
         allowed_group_ids=settings.allowed_group_ids,
+        character_library=character_library,
     )
     try:
         await runner.run()
@@ -69,6 +74,7 @@ async def main() -> None:
         await service.close()
         await llm.close()
         await image_generator.close()
+        await character_library.close()
         memory.close()
 
 

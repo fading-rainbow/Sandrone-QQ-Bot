@@ -231,6 +231,34 @@ def _multipart_parts(request):
 
 
 @pytest.mark.asyncio
+async def test_multi_character_grounding_serializes_all_real_reference_pixels(monkeypatch, tmp_path):
+    from talk_bot.character_refs import CharacterReference
+
+    refs = []
+    for name, filename, color in [("桑多涅", "sandrone.png", "red"), ("沃雅妮莎", "voyanisa.png", "blue")]:
+        path = tmp_path / filename
+        Image.new("RGB", (32, 64), color).save(path)
+        refs.append(CharacterReference(name, path, "official"))
+    refs = tuple(refs)
+
+    def handler(request):
+        assert request.url.path == "/v1/images/edits"
+        fields, files = _multipart_parts(request)
+        assert fields["model"] == SUNBURST
+        assert "图片1只对应角色【桑多涅】" in fields["prompt"]
+        assert "图片2只对应角色【沃雅妮莎】" in fields["prompt"]
+        assert [payload for _, _, payload in files] == [ref.path.read_bytes() for ref in refs]
+        return _image_response((1536, 1024))
+
+    generator = _generator_with_transport(monkeypatch, tmp_path, handler)
+    try:
+        result = await generator.generate("桑多涅和沃雅妮莎在海边玩水", character_references=refs)
+        assert result.character_references == refs
+    finally:
+        await generator.close()
+
+
+@pytest.mark.asyncio
 async def test_sunburst_plain_generation_uses_images_generation_endpoint(monkeypatch, tmp_path):
     requests = []
 

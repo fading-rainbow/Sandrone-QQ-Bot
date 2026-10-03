@@ -1,6 +1,6 @@
 {
   "project": "Sandrone-QQ-Bot",
-  "source_kind": "current local application source; requested Gemini 3.8 Flash and independent GPT Image 2.5 Sunburst deployed and live verified",
+  "source_kind": "current local application source; Gemini 3.8 Flash and Sunburst character grounding developed and isolated-live verified; production baseline recorded separately",
   "development_base": null,
   "production": {
     "type": "systemd Python source",
