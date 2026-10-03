@@ -1,6 +1,6 @@
 {
   "project": "Sandrone-QQ-Bot",
-  "source_kind": "current local application source; live application hashes verified",
+  "source_kind": "current local application source; independent GPT Image 2.5 Sunburst configuration prepared; live deployment pending independent image credentials",
   "development_base": null,
   "production": {
     "type": "systemd Python source",

@@ -48,8 +48,8 @@ async def main() -> None:
         web_search_group_cooldown_seconds=settings.web_search_group_cooldown_seconds,
     )
     image_generator = ImageGenerator(
-        api_key=settings.openai_api_key,
-        base_url=settings.openai_base_url,
+        api_key=settings.image_api_key,
+        base_url=settings.image_base_url,
         model=settings.image_model,
         output_dir=settings.generated_image_dir,
         sandrone_reference_paths=settings.sandrone_reference_paths,

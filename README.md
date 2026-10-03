@@ -1,6 +1,6 @@
 # sandrone QQ 聊天机器人
 
-面向小型 VPS 的轻量 QQ 机器人：通过腾讯官方 `qqbot-agent-sdk` 接收好友/群聊消息，调用 GPT-5.6 Luna，并使用 SQLite 持久保存聊天记录和明确的长期记忆。回复、固有角色记忆与滚动摘要采用《原神》桑多涅人设。
+面向小型 VPS 的轻量 QQ 机器人：通过腾讯官方 `qqbot-agent-sdk` 接收好友/群聊消息，使用 OpenAI 兼容语言接口和 SQLite 持久记忆。聊天默认采用 Gemini，生图默认采用 GPT Image 2.5 Sunburst；两个通道可独立配置。回复、固有角色记忆与滚动摘要采用《原神》桑多涅人设。
 
 ## 功能
 
@@ -12,7 +12,7 @@
   有定向 @、引用、图片上下文或事实指代不清时保持安静，候选句还会经过一次一致性复核
 - 约 30% 的普通聊天回复确定性携带一个 Unicode Emoji；模型未主动使用时由发送前策略按语境补一个，其余回复仍明确抑制，避免比例失控
 - 接收贴在 Sandrone 消息上的 QQ 表情并写入持久互动反馈：近期表情会轻微影响她下一次自然回复的情绪，长期累计只作为很轻的关系线索；撤销表情会撤销当前反馈，不会因贴表情立即刷屏。能否收到仍取决于平台实际下发
-- GPT-5.6 Luna Responses API；也可切换 OpenAI 兼容的 Chat Completions
+- 默认 Gemini Chat Completions；也支持兼容的 Responses API
 - 按需网页检索：支持 `/搜索`、明确检索请求和明显时效问题，回答附来源
 - 网页结果按群缓存 30 分钟并限频；外部资料带时间进入短期上下文，不覆盖角色固有记忆
 - SQLite WAL 原始时间线 + 自动滚动摘要 + 显式长期记忆，服务重启后仍保留
@@ -66,7 +66,7 @@ Copy-Item .env.example .env
 ## 配置说明
 
 - `OPENAI_BASE_URL` 必须包含 API 根路径，官方服务为 `https://api.openai.com/v1`。
-- `OPENAI_API_MODE=responses` 是默认值。若中转只实现 Chat Completions，可改成 `chat_completions`。
+- `OPENAI_API_MODE=chat_completions` 是默认值；支持 Responses 工具的通道可改为 `responses`。
 - `HISTORY_MESSAGES` 是每次发给模型的最近消息数，默认 30；数据库会保留最多 4000 条，且绝不因容量上限删除尚未进入摘要的消息。滚动摘要最多 2400 个中文字符；显式长期事实单条最多 1000 字、默认读取最近 60 条。
 - 普通短问句、图片追问和承接问句保留配置内的完整近期上下文及滚动记忆，不再按“20 字以内”裁成当前一句，也不再将承接问句限制为 8 条。仅明确的自我评价、纯表情和简短情绪采用窄上下文；归属校验共享主回复实际获得的历史、事实与印象证据，不能因自己缺少上下文否认记忆。
 - `SUMMARY_TRIGGER_MESSAGES` 控制累计多少条新消息后更新一次滚动摘要，默认 20。
@@ -75,7 +75,8 @@ Copy-Item .env.example .env
 - `WEB_SEARCH_ENABLED` 控制网页检索；默认开启，仅在 Responses API 模式且中转支持
   `web_search` 工具时可用。
 - `WEB_SEARCH_CACHE_SECONDS` 默认 1800；普通成员检索冷却默认 30 秒，全群默认 10 秒。
-- `IMAGE_MODEL` 默认为 `gpt-image-2`；`IMAGE_COOLDOWN_SECONDS` 默认为 180。
+- `IMAGE_MODEL` 默认为 `gpt-image-2.5-sunburst`；`IMAGE_COOLDOWN_SECONDS` 默认为 180。使用 OpenAI Images API，普通生图走 `/images/generations`，身份参考和原图编辑走 `/images/edits`。
+- `IMAGE_API_KEY` / `IMAGE_BASE_URL` 单独配置生图通道；留空时复用 `OPENAI_API_KEY` / `OPENAI_BASE_URL`。Gemini 专用通道不一定支持 Images API，切换前必须实测生成和编辑。`OPENAI_MODEL` 及其聊天/识图通道不随生图设置改变。
 - `SANDRONE_REFERENCE_IMAGES` 是逗号分隔的桑多涅参考图；默认使用项目内的脸部与服装参考。
 - `BOT_OWNER_IDS` 是最高指挥身份列表，应同时配置 QQ 号与平台实际提供的 `openid`。
 - `ALLOWED_GROUP_IDS` 限制唯一服务群，应同时配置群号与平台实际提供的群 `openid`。
@@ -106,9 +107,3 @@ sudo journalctl -u sandrone-bot -f
 若没有免密 sudo，可部署到 `~/services/sandrone-bot` 并使用
 `deploy/sandrone-bot.user.service`。用户服务要跨 SSH 注销和重启持续运行，还需管理员执行一次
 `sudo loginctl enable-linger <用户名>`；不能启用 linger 时，不应把“当前运行”误当作持续服务已经完成。
-
-
-## 展示版说明
-
-本仓库为脱敏源码快照，包含现有自动化测试；不附带生产配置、数据库、聊天记录、部署凭据或第三方角色参考图片。请自行配置平台凭据。测试使用模拟接口，不表示已完成本轮 QQ 平台联调。
-图像功能的角色参考图需要自行提供获授权图片，并配置 `SANDRONE_REFERENCE_IMAGES`。文本聊天不需要这些图片。

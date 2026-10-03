@@ -104,6 +104,8 @@ class Settings:
     openai_base_url: str
     openai_model: str
     image_model: str
+    image_api_key: str
+    image_base_url: str
     image_cooldown_seconds: int
     generated_image_dir: Path
     sandrone_reference_paths: tuple[Path, ...]
@@ -127,15 +129,21 @@ class Settings:
     @classmethod
     def from_env(cls, *, require_secrets: bool = True) -> Settings:
         load_dotenv()
+        openai_api_key = os.getenv("OPENAI_API_KEY", "").strip()
+        openai_base_url = (
+            os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").strip().rstrip("/")
+        )
         settings = cls(
             qq_app_id=os.getenv("QQ_APP_ID", "").strip(),
             qq_app_secret=os.getenv("QQ_APP_SECRET", "").strip(),
-            openai_api_key=os.getenv("OPENAI_API_KEY", "").strip(),
-            openai_base_url=os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
-            .strip()
-            .rstrip("/"),
+            openai_api_key=openai_api_key,
+            openai_base_url=openai_base_url,
             openai_model=os.getenv("OPENAI_MODEL", "gemini-3-flash").strip(),
-            image_model=os.getenv("IMAGE_MODEL", "gemini-3.1-flash-image").strip(),
+            image_model=os.getenv("IMAGE_MODEL", "gpt-image-2.5-sunburst").strip(),
+            image_api_key=os.getenv("IMAGE_API_KEY", "").strip() or openai_api_key,
+            image_base_url=(
+                os.getenv("IMAGE_BASE_URL", "").strip().rstrip("/") or openai_base_url
+            ),
             image_cooldown_seconds=_positive_int(
                 "IMAGE_COOLDOWN_SECONDS", 180, 1, 86400
             ),
@@ -179,7 +187,7 @@ class Settings:
             system_prompt=(os.getenv("BOT_SYSTEM_PROMPT", "").strip() or DEFAULT_PROMPT),
             owner_ids=frozenset(
                 item.strip()
-                for item in os.getenv("BOT_OWNER_IDS", "488088314").split(",")
+                for item in os.getenv("BOT_OWNER_IDS", "").split(",")
                 if item.strip()
             ),
             allowed_group_ids=frozenset(
@@ -200,6 +208,8 @@ class Settings:
             raise ValueError("SUMMARY_BATCH_MESSAGES 不能小于 SUMMARY_TRIGGER_MESSAGES")
         if not self.openai_base_url.startswith(("https://", "http://")):
             raise ValueError("OPENAI_BASE_URL 必须是 http(s) 地址")
+        if not self.image_base_url.startswith(("https://", "http://")):
+            raise ValueError("IMAGE_BASE_URL 必须是 http(s) 地址")
         if require_secrets:
             missing = [
                 name
