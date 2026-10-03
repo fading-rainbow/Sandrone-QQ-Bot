@@ -134,8 +134,8 @@ class Settings:
             openai_base_url=os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
             .strip()
             .rstrip("/"),
-            openai_model=os.getenv("OPENAI_MODEL", "gpt-5.6-luna").strip(),
-            image_model=os.getenv("IMAGE_MODEL", "gpt-image-2").strip(),
+            openai_model=os.getenv("OPENAI_MODEL", "gemini-3-flash").strip(),
+            image_model=os.getenv("IMAGE_MODEL", "gemini-3.1-flash-image").strip(),
             image_cooldown_seconds=_positive_int(
                 "IMAGE_COOLDOWN_SECONDS", 180, 1, 86400
             ),
@@ -151,7 +151,7 @@ class Settings:
                 ).split(",")
                 if item.strip()
             ),
-            openai_api_mode=os.getenv("OPENAI_API_MODE", "responses").strip().lower(),
+            openai_api_mode=os.getenv("OPENAI_API_MODE", "chat_completions").strip().lower(),
             reasoning_effort=os.getenv("REASONING_EFFORT", "high").strip().lower(),
             max_output_tokens=_positive_int("MAX_OUTPUT_TOKENS", 1400, 64, 128000),
             history_messages=_positive_int("HISTORY_MESSAGES", 30, 2, 200),
@@ -179,7 +179,7 @@ class Settings:
             system_prompt=(os.getenv("BOT_SYSTEM_PROMPT", "").strip() or DEFAULT_PROMPT),
             owner_ids=frozenset(
                 item.strip()
-                for item in os.getenv("BOT_OWNER_IDS", "").split(",")
+                for item in os.getenv("BOT_OWNER_IDS", "488088314").split(",")
                 if item.strip()
             ),
             allowed_group_ids=frozenset(

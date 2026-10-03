@@ -9,3 +9,14 @@ __pycache__/
 .ruff_cache/
 data/
 logs/
+
+# Runtime/private files: never synchronize
+.codex-remote-attachments/
+*.log
+*.sqlite*
+*.db
+*.egg-info/
+.audit/
+
+# Runtime/private files: never synchronize
+!SOURCE_BASELINE.json

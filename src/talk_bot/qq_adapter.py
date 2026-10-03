@@ -119,6 +119,7 @@ _DEICTIC_IMAGE_QUESTION_RE = re.compile(
     r"(?:这张|上面这张|上图|图中|图里).{0,24}(?:从左到右|依次是谁|怎么评价|"
     r"怎么样|美颜|有几个人|几个角色))[？?。！!]*$"
 )
+_ACTIVE_MESSAGE_PERMISSION_RECHECK_SECONDS = 6 * 60 * 60
 
 
 @dataclass
@@ -165,6 +166,19 @@ def is_expired_reply_error(error: BaseException) -> bool:
             marker in message for marker in ("msg_id", "msgid", "消息id")
         )
         if has_message_id and ("过期" in message or "expired" in message):
+            return True
+        current = current.__cause__ or current.__context__
+    return False
+
+
+def is_active_message_permission_error(error: BaseException) -> bool:
+    """Recognize the explicit proactive-send denial, including SDK wrappers."""
+    current: BaseException | None = error
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        message = str(current).lower().replace(" ", "")
+        if "主动消息" in message and "无权限" in message:
             return True
         current = current.__cause__ or current.__context__
     return False
@@ -261,28 +275,59 @@ class QQBotRunner:
                 "QQ 回复 msg_id 已过期，降级为普通消息 message_id=%s",
                 event.message_id,
             )
+            result = await self._send_fresh_text(event, content)
+        self._remember_outbound(result, content)
+        return result
+
+    async def _send_fresh_text(self, event, content: str) -> dict:
+        # The SDK retries every unrecognized 400. A permission denial cannot
+        # improve on retry, and optional messages can wait for the next event.
+        try:
             result = await self.api.send_text(
                 event.chat_scope,
                 event.chat_id,
                 content,
                 reply_to=None,
                 markdown=False,
-                retries=2,
+                retries=1,
             )
+        except Exception as exc:
+            if is_active_message_permission_error(exc):
+                self._block_optional_messages(event)
+            raise
         self._remember_outbound(result, content)
         return result
 
-    async def _send_fresh_text(self, event, content: str) -> dict:
-        result = await self.api.send_text(
-            event.chat_scope,
-            event.chat_id,
-            content,
-            reply_to=None,
-            markdown=False,
-            retries=2,
+    @staticmethod
+    def _optional_permission_key(event) -> str:
+        return f"qq:active-message-denied:{event.chat_scope}:{event.chat_id}"
+
+    def _optional_messages_available(self, event, *, passive: bool = False) -> bool:
+        if passive and getattr(event, "message_id", ""):
+            return True
+        if getattr(event, "chat_scope", "") != "group":
+            return True
+        memory = getattr(getattr(self, "service", None), "memory", None)
+        if memory is None:
+            return True
+        return not memory.rate_limit_remaining(
+            self._optional_permission_key(event),
+            _ACTIVE_MESSAGE_PERMISSION_RECHECK_SECONDS,
         )
-        self._remember_outbound(result, content)
-        return result
+
+    def _block_optional_messages(self, event) -> None:
+        memory = getattr(getattr(self, "service", None), "memory", None)
+        if memory is None or not getattr(event, "chat_id", ""):
+            return
+        claimed, _, _ = memory.claim_rate_limit(
+            self._optional_permission_key(event),
+            _ACTIVE_MESSAGE_PERMISSION_RECHECK_SECONDS,
+        )
+        if claimed:
+            logger.warning(
+                "QQ 主动消息权限不足，暂停该群主动问候/插话6小时；被动回复继续 group=%s",
+                event.chat_id,
+            )
 
     async def _send_media_with_reply_fallback(self, event, file_info: str) -> None:
         async def post(reply_to: str | None) -> None:
@@ -333,8 +378,8 @@ class QQBotRunner:
         if event_type == FULL_GROUP_EVENT and should_reply:
             event.content = self._strip_bot_mentions(event.content)
         if event.chat_scope != "group" or event.chat_id not in self.allowed_group_ids:
-            logger.debug(
-                "忽略非目标群消息 scope=%s chat_id=%s",
+            logger.info(
+                "收到非白名单群/消息: scope=%s chat_id=%s (若需接入该群，请将 chat_id 追加至 ALLOWED_GROUP_IDS)",
                 event.chat_scope,
                 event.chat_id,
             )
@@ -576,15 +621,22 @@ class QQBotRunner:
                 if not observed:
                     return
                 proactive_due = self.service.note_group_message(incoming)
+                if not self._optional_messages_available(event):
+                    logger.debug(
+                        "跳过无主动消息权限的群问候/插话 group=%s", event.chat_id
+                    )
+                    return
                 greeting = await self.service.daily_greeting(incoming)
                 if greeting:
                     logger.info(
                         "消息路由 route=daily_greeting message_id=%s", event.message_id
                     )
-                    await self._send_fresh_text(event, greeting)
-                    self.service.memory.reset_proactive_activity(
-                        incoming.conversation_key
-                    )
+                    sent = await self._send_optional_text(event, greeting)
+                    self.service.complete_daily_greeting(incoming, greeting, sent=sent)
+                    if sent:
+                        self.service.memory.reset_proactive_activity(
+                            incoming.conversation_key
+                        )
                 elif proactive_due:
                     proactive = await self.service.proactive_reply(incoming)
                     if proactive:
@@ -592,7 +644,8 @@ class QQBotRunner:
                             "消息路由 route=proactive_chat message_id=%s",
                             event.message_id,
                         )
-                        await self._send_fresh_text(event, proactive)
+                        if await self._send_optional_text(event, proactive):
+                            self.service.remember_assistant(incoming, proactive)
                 logger.debug("已记录群聊消息，不主动回复 message_id=%s", event.message_id)
                 return
             self.service.note_group_message(incoming)
@@ -601,10 +654,12 @@ class QQBotRunner:
                 logger.info(
                     "消息路由 route=daily_greeting message_id=%s", event.message_id
                 )
-                await self._send_fresh_text(event, greeting)
-                self.service.memory.reset_proactive_activity(
-                    incoming.conversation_key
-                )
+                sent = await self._send_optional_text(event, greeting, passive=True)
+                self.service.complete_daily_greeting(incoming, greeting, sent=sent)
+                if sent:
+                    self.service.memory.reset_proactive_activity(
+                        incoming.conversation_key
+                    )
             if event.chat_scope == "c2c":
                 await self.api.send_typing(event.chat_id, event.message_id, input_seconds=60)
             if self._image_job is not None and _IMAGE_CANCEL_RE.fullmatch(
@@ -683,6 +738,22 @@ class QQBotRunner:
                     )
                 except Exception:
                     logger.warning("原图缓存未成功 message_id=%s", event.message_id)
+
+    async def _send_optional_text(self, event, text: str, *, passive: bool = False) -> bool:
+        """Optional greetings/interjections must never abort a requested reply."""
+        if not self._optional_messages_available(event, passive=passive):
+            return False
+        try:
+            if passive and getattr(event, "message_id", ""):
+                await self._send_reply_text(event, text)
+            else:
+                await self._send_fresh_text(event, text)
+            return True
+        except Exception as exc:
+            if is_active_message_permission_error(exc):
+                self._block_optional_messages(event)
+            logger.warning("主动问候或插话发送失败，继续处理当前消息 message_id=%s", event.message_id)
+            return False
 
     def _is_owner(self, event) -> bool:
         values = {str(event.user_id or "")}

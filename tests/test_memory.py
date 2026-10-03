@@ -205,6 +205,29 @@ def test_daily_greeting_is_claimed_once_and_remembers_previous_day(tmp_path: Pat
     store.close()
 
 
+def test_failed_greeting_can_be_retried_but_delivered_greeting_is_kept(tmp_path: Path) -> None:
+    store = MemoryStore(tmp_path / "memory.db")
+    assert store.claim_daily_greeting("group:g1", "u1", "2026-09-26")
+    store.release_daily_greeting("group:g1", "u1", "2026-09-26")
+    assert store.claim_daily_greeting("group:g1", "u1", "2026-09-26")
+    store.save_daily_greeting("group:g1", "u1", "2026-09-26", "早，今天也来聊点有趣的。")
+    store.release_daily_greeting("group:g1", "u1", "2026-09-26")
+    assert not store.claim_daily_greeting("group:g1", "u1", "2026-09-26")
+    store.close()
+
+
+def test_abandoned_greeting_reservation_expires_after_restart(tmp_path: Path) -> None:
+    path = tmp_path / "memory.db"
+    store = MemoryStore(path)
+    assert store.claim_daily_greeting("group:g1", "u1", "2026-09-26")
+    store._conn.execute("UPDATE daily_greetings SET created_at = datetime('now', '-11 minutes')")
+    store._conn.commit()
+    store.close()
+    store = MemoryStore(path)
+    assert store.claim_daily_greeting("group:g1", "u1", "2026-09-26")
+    store.close()
+
+
 def test_proactive_counter_uses_fixed_20_message_window_and_resets(tmp_path: Path) -> None:
     store = MemoryStore(tmp_path / "memory.db")
     reached_at = None

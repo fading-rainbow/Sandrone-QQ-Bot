@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+import httpx
 
 from talk_bot.image_gen import GeneratedImage, ImageContentPolicyError
 from talk_bot.image_sources import ImageSourceUnavailable
@@ -13,6 +14,7 @@ from talk_bot.qq_adapter import (
     ImageJobState,
     QQBotRunner,
     image_progress_reply,
+    is_active_message_permission_error,
     is_expired_reply_error,
     is_image_delivery_followup,
     is_image_progress_question,
@@ -49,6 +51,127 @@ def test_expired_reply_error_is_recognized_without_misclassifying_timeouts() -> 
     wrapped.__cause__ = api_error
     assert is_expired_reply_error(wrapped)
     assert not is_expired_reply_error(RuntimeError("QQ Bot API timeout"))
+
+
+def test_proactive_permission_detection_is_specific_and_unwraps_sdk_error() -> None:
+    error = RuntimeError("QQ Bot API error [400]: 主动消息失败, 无权限")
+    wrapped = RuntimeError("send_text failed after 1 attempts")
+    wrapped.__cause__ = error
+    assert is_active_message_permission_error(wrapped)
+    assert not is_active_message_permission_error(RuntimeError("QQ Bot API error [400]: 内容太长"))
+    assert not is_active_message_permission_error(RuntimeError("QQ Bot API timeout"))
+
+
+@pytest.mark.asyncio
+async def test_proactive_permission_denial_is_cached_per_group_and_survives_restart(tmp_path) -> None:
+    path = tmp_path / "memory.db"
+    memory = MemoryStore(path)
+    runner = object.__new__(QQBotRunner)
+    runner.service = SimpleNamespace(memory=memory)
+    runner.api = SimpleNamespace(send_text=AsyncMock(side_effect=RuntimeError(
+        "QQ Bot API error [400]: 主动消息失败, 无权限"
+    )))
+    event = SimpleNamespace(chat_scope="group", chat_id="g1", message_id="m1")
+
+    assert await runner._send_optional_text(event, "早安") is False
+    assert runner.api.send_text.await_args.kwargs["retries"] == 1
+    assert await runner._send_optional_text(event, "又来一次") is False
+    assert runner.api.send_text.await_count == 1
+    assert not runner._optional_messages_available(event)
+    assert runner._optional_messages_available(event, passive=True)
+    assert runner._optional_messages_available(SimpleNamespace(chat_scope="group", chat_id="g2"))
+    remaining = memory.rate_limit_remaining(runner._optional_permission_key(event), 21600)
+    assert 21590 <= remaining <= 21600
+    memory.close()
+
+    runner.service.memory = MemoryStore(path)
+    assert not runner._optional_messages_available(event)
+    with runner.service.memory._lock:
+        runner.service.memory._conn.execute("UPDATE rate_limits SET last_at = last_at - 21601")
+        runner.service.memory._conn.commit()
+    assert runner._optional_messages_available(event)
+    runner.service.memory.close()
+
+
+@pytest.mark.asyncio
+async def test_transient_optional_failure_does_not_disable_group(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "memory.db")
+    runner = object.__new__(QQBotRunner)
+    runner.service = SimpleNamespace(memory=memory)
+    runner.api = SimpleNamespace(send_text=AsyncMock(side_effect=httpx.ReadTimeout("timeout")))
+    event = SimpleNamespace(chat_scope="group", chat_id="g1", message_id="m1")
+    assert await runner._send_optional_text(event, "早安") is False
+    assert runner._optional_messages_available(event)
+    memory.close()
+
+
+def _runner_for_optional_event_test(memory: MemoryStore) -> QQBotRunner:
+    runner = object.__new__(QQBotRunner)
+    runner.owner_ids = frozenset()
+    runner._image_job = None
+    runner.image_sources = None
+    runner.api = SimpleNamespace(send_text=AsyncMock(return_value={"id": "sent"}))
+    runner.service = SimpleNamespace(
+        memory=memory,
+        observe=AsyncMock(return_value=True),
+        note_group_message=lambda _: True,
+        daily_greeting=AsyncMock(return_value="早安"),
+        complete_daily_greeting=lambda *args, **kwargs: None,
+        proactive_reply=AsyncMock(return_value="这个话题还算有趣。"),
+        resolve_web_search_query=AsyncMock(return_value=None),
+        resolve_image_prompt=AsyncMock(return_value=None),
+        handle=AsyncMock(return_value="回答"),
+        remember_assistant=lambda incoming, content: memory.append(
+            incoming.conversation_key, incoming.user_id, "assistant", content
+        ),
+    )
+    return runner
+
+
+def _optional_event(message_id: str = "m1"):
+    return SimpleNamespace(
+        chat_scope="group", chat_id="g1", message_id=message_id,
+        user_id="u1", user_name="群友", raw={}, content="这个话题还挺有趣的",
+        message_type=0, msg_elements=[], attachments=[],
+    )
+
+
+@pytest.mark.asyncio
+async def test_denied_group_skips_optional_generation_but_passive_greeting_and_reply_continue(tmp_path) -> None:
+    memory = MemoryStore(tmp_path / "memory.db")
+    runner = _runner_for_optional_event_test(memory)
+    event = _optional_event()
+    runner._block_optional_messages(event)
+
+    await runner._handle_event(event, should_reply=False)
+    runner.service.observe.assert_awaited_once()
+    runner.service.daily_greeting.assert_not_awaited()
+    runner.service.proactive_reply.assert_not_awaited()
+    runner.api.send_text.assert_not_awaited()
+
+    await runner._handle_event(_optional_event("mention"), should_reply=True)
+    runner.service.daily_greeting.assert_awaited_once()
+    runner.service.handle.assert_awaited_once()
+    assert runner.api.send_text.await_count == 2
+    assert all(call.kwargs["reply_to"] == "mention" for call in runner.api.send_text.await_args_list)
+    memory.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("sent", [False, True])
+async def test_proactive_message_is_recorded_only_after_confirmed_send(tmp_path, sent) -> None:
+    memory = MemoryStore(tmp_path / "memory.db")
+    runner = _runner_for_optional_event_test(memory)
+    runner.service.daily_greeting.return_value = None
+    if not sent:
+        runner.api.send_text.side_effect = RuntimeError("QQ Bot API error [400]: 主动消息失败, 无权限")
+    await runner._handle_event(_optional_event(), should_reply=False)
+    history = memory.history("group:g1", 10)
+    assert bool(history) is sent
+    if sent:
+        assert history[-1].content == "这个话题还算有趣。"
+        assert history[-1].user_id == "u1"
+    memory.close()
 
 
 @pytest.mark.asyncio

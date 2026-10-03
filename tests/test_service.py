@@ -298,6 +298,7 @@ async def test_daily_greeting_is_once_per_beijing_day_and_uses_compact_model(
         now=datetime(2026, 8, 27, 6, 0, tzinfo=tz),
     )
     assert first is not None and first.startswith("紧凑结果")
+    service.complete_daily_greeting(group_incoming("早", event_id="b"), first, sent=True)
     assert ChatService._has_emoji(first)
     assert (
         await service.daily_greeting(
@@ -332,10 +333,50 @@ async def test_proactive_reply_can_skip_or_add_one_persona_line(tmp_path: Path) 
         side_effect=["今晚吃火锅也行，别把齿轮煮进去就好。 ", "PASS"]
     )
     service.llm = speaking
-    assert await service.proactive_reply(message) == "今晚吃火锅也行，别把齿轮煮进去就好。"
+    reply = await service.proactive_reply(message)
+    assert reply == "今晚吃火锅也行，别把齿轮煮进去就好。"
+    assert memory.history(message.conversation_key, 2)[-1].role == "user"
+    service.remember_assistant(message, reply)
     assert memory.history(message.conversation_key, 2)[-1].role == "assistant"
     await service.close()
     memory.close()
+
+
+@pytest.mark.asyncio
+async def test_daily_greeting_failure_releases_claim_until_delivery(tmp_path: Path) -> None:
+    memory = MemoryStore(tmp_path / "memory.db")
+    service = ChatService(memory, CompactLLM(), system_prompt="系统", history_messages=10)
+    tz = timezone(timedelta(hours=8))
+    moment = datetime(2026, 9, 26, 8, 0, tzinfo=tz)
+    first = group_incoming("早", event_id="greet-failed")
+    try:
+        greeting = await service.daily_greeting(first, now=moment)
+        assert greeting
+        assert memory.previous_daily_greeting(first.conversation_key, first.user_id, "2026-09-27") == ""
+        service.complete_daily_greeting(first, greeting, sent=False)
+        next_message = group_incoming("我又来了", event_id="greet-ok")
+        greeting = await service.daily_greeting(next_message, now=moment)
+        assert greeting
+        service.complete_daily_greeting(next_message, greeting, sent=True)
+        assert memory.previous_daily_greeting(first.conversation_key, first.user_id, "2026-09-27") == greeting
+        assert await service.daily_greeting(group_incoming("你好", event_id="greet-again"), now=moment) is None
+    finally:
+        await service.close()
+        memory.close()
+
+
+@pytest.mark.asyncio
+async def test_disabled_search_cannot_be_bypassed_by_direct_intent(tmp_path: Path) -> None:
+    memory = MemoryStore(tmp_path / "memory.db")
+    llm = SearchLLM()
+    service = ChatService(memory, llm, system_prompt="系统", history_messages=10, web_search_enabled=False)
+    try:
+        assert await service.resolve_web_search_query(group_incoming("/搜索 原神最新公告")) is None
+        await service.handle(group_incoming("长江七号几岁", event_id="disabled-search"), search_query_override="年龄")
+        assert not llm.web_calls
+    finally:
+        await service.close()
+        memory.close()
 
 
 @pytest.mark.asyncio
@@ -1246,6 +1287,28 @@ async def test_high_risk_group_reply_gets_attribution_guard(tmp_path: Path) -> N
     assert guard_call[3] == "medium"
     await service.close()
     memory.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("result", [RuntimeError("模型输出未完成"), "Recent messages: ..."])
+async def test_broken_attribution_guard_preserves_complete_answer(tmp_path: Path, result) -> None:
+    from unittest.mock import AsyncMock
+    from talk_bot.memory import StoredMessage
+    memory = MemoryStore(tmp_path / "memory.db")
+    llm = AttributionGuardLLM()
+    llm.compact_reply = AsyncMock(**({"side_effect": result} if isinstance(result, Exception) else {"return_value": result}))
+    service = ChatService(memory, llm, system_prompt="系统", history_messages=30)
+    answer = "分层方向不错，但要明确冲突处理与来源追踪。"
+    try:
+        checked = await service._guard_group_attribution(
+            IncomingMessage("guard", "group", "room", "u2", "评价一下", "乙"),
+            [StoredMessage("user", "【消息发送者：甲】 你好"), StoredMessage("user", "【消息发送者：乙】 评价一下")],
+            ["评价一下"], answer)
+        assert checked == answer
+        llm.compact_reply.assert_awaited_once()
+    finally:
+        await service.close()
+        memory.close()
 
 
 @pytest.mark.asyncio

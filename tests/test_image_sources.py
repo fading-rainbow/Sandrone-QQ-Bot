@@ -18,6 +18,20 @@ def raw_image():
     return buf.getvalue()
 
 
+@pytest.mark.asyncio
+async def test_real_qq_multimedia_host_is_cached_but_lookalikes_rejected(tmp_path):
+    cache = ImageSourceCache(tmp_path)
+    downloader = AsyncMock(return_value=("data:image/png;base64," + base64.b64encode(raw_image()).decode(), 100))
+    try:
+        paths = await cache.fetch(incoming(), ("https://multimedia.nt.qq.com.cn/test",), downloader)
+        assert paths[0].is_file()
+        with pytest.raises(ImageSourceUnavailable):
+            await cache.fetch(incoming(), ("https://multimedia.nt.qq.com.cn.evil.example/test",), downloader)
+        assert downloader.await_count == 1
+    finally:
+        cache.close()
+
+
 def incoming(**kwargs):
     return replace(IncomingMessage("e1", "group", "g1", "u1", "把图中的数字改成65432"), **kwargs)
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import io
 import logging
@@ -107,18 +108,83 @@ class LLMClient:
             )
             text = response.output_text
         else:
-            response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=[{"role": "system", "content": instructions}, *input_messages],
-                reasoning_effort=reasoning_effort,
-                max_completion_tokens=max_output_tokens,
-            )
+            kwargs: dict = {
+                "model": self.model,
+                "messages": [{"role": "system", "content": instructions}, *input_messages],
+                "max_completion_tokens": self._completion_budget(max_output_tokens),
+            }
+            if reasoning_effort and reasoning_effort != "none":
+                kwargs["reasoning_effort"] = reasoning_effort
+            response = await self._chat_completion(kwargs, purpose)
             text = response.choices[0].message.content or ""
-        self._log_usage(response, purpose)
+        if self.api_mode == "responses":
+            self._log_usage(response, purpose)
+        self._require_complete(response, purpose)
         text = text.strip()
         if not text:
             raise RuntimeError("模型返回了空文本")
         return text
+
+    async def _chat_completion(self, kwargs: dict, purpose: str):
+        """Recover Gemini's occasional reasoning-only/truncated result once.
+
+        Keep the original evidence and token cap, and spend less time thinking
+        on recovery. Never concatenate partial text or retry content filtering.
+        The two attempts together share the original 75-second reply deadline.
+        """
+        request = dict(kwargs)
+        deadline = asyncio.get_running_loop().time() + 75.0
+        for attempt in range(2):
+            remaining = deadline - asyncio.get_running_loop().time()
+            response = await asyncio.wait_for(
+                self._create_chat_completion(request), timeout=max(0.01, remaining)
+            )
+            self._log_usage(response, purpose + ("_recovery" if attempt else ""))
+            choice = response.choices[0] if response.choices else None
+            reason = getattr(choice, "finish_reason", None)
+            text = getattr(getattr(choice, "message", None), "content", None)
+            recoverable = reason == "length" or (reason in {None, "stop"} and not (text or "").strip())
+            if not (recoverable and self.model.lower().startswith("gemini") and attempt == 0):
+                self._require_complete(response, purpose)
+                if not (text or "").strip():
+                    raise RuntimeError(f"模型返回了空文本 purpose={purpose}")
+                return response
+            if deadline - asyncio.get_running_loop().time() < 10:
+                self._require_complete(response, purpose)
+                raise RuntimeError(f"模型返回了空文本 purpose={purpose}")
+            logger.warning("模型输出需恢复 purpose=%s finish=%s attempt=1", purpose, reason)
+            request["reasoning_effort"] = "low"
+            request["messages"] = [*kwargs["messages"], {
+                "role": "system",
+                "content": "请直接给出符合原任务格式的完整结果，精简表达，不要写分析过程或复述提示词。",
+            }]
+        raise RuntimeError(f"模型恢复失败 purpose={purpose}")
+
+    async def _create_chat_completion(self, kwargs: dict):
+        try:
+            return await self.client.chat.completions.create(**kwargs)
+        except Exception as exc:
+            if "reasoning_effort" in str(exc).lower() and "reasoning_effort" in kwargs:
+                fallback = {key: value for key, value in kwargs.items() if key != "reasoning_effort"}
+                return await self.client.chat.completions.create(**fallback)
+            raise
+
+    def _completion_budget(self, visible_tokens: int) -> int:
+        # Gemini's completion limit includes hidden thinking, unlike the visible
+        # text budgets used by our routers, validators and memory writers.
+        if self.model.lower().startswith("gemini"):
+            return visible_tokens + 4096
+        return visible_tokens
+
+    @staticmethod
+    def _require_complete(response, purpose: str) -> None:
+        choices = getattr(response, "choices", None)
+        reason = getattr(choices[0], "finish_reason", None) if choices else None
+        status = getattr(response, "status", None)
+        if reason in {"length", "content_filter"} or status in {"incomplete", "failed"}:
+            # In particular never persist partial summaries or replace a good
+            # answer with a truncated attribution correction. Callers fall back.
+            raise RuntimeError(f"模型输出未完成 purpose={purpose} finish={reason or status}")
 
     async def describe_images(self, *, prompt: str, image_urls: Sequence[str]) -> str:
         if not image_urls:
@@ -143,14 +209,18 @@ class LLMClient:
                 {"type": "image_url", "image_url": {"url": url}}
                 for url in prepared_urls
             )
-            response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=[{"role": "user", "content": content}],
-                reasoning_effort=self.reasoning_effort,
-                max_completion_tokens=min(self.max_output_tokens, 650),
-            )
+            kwargs: dict = {
+                "model": self.model,
+                "messages": [{"role": "user", "content": content}],
+                "max_completion_tokens": self._completion_budget(min(self.max_output_tokens, 650)),
+            }
+            if self.reasoning_effort and self.reasoning_effort != "none":
+                kwargs["reasoning_effort"] = self.reasoning_effort
+            response = await self._chat_completion(kwargs, "vision")
             text = response.choices[0].message.content or ""
-        self._log_usage(response, "vision")
+        if self.api_mode == "responses":
+            self._log_usage(response, "vision")
+        self._require_complete(response, "vision")
         text = text.strip()
         if not text:
             raise RuntimeError("模型没有返回图片描述")
@@ -196,8 +266,9 @@ class LLMClient:
                         chunks.append(chunk)
                     content = b"".join(chunks)
                     break
-            except (httpx.TimeoutException, httpx.NetworkError):
+            except httpx.TransportError:
                 if attempt == 0:
+                    logger.warning("群聊图片传输中断，重新下载一次 host=%s", host)
                     continue
                 raise RuntimeError(f"下载群聊图片超时或网络异常 host={host}") from None
         if content is None:

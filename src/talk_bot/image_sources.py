@@ -110,7 +110,7 @@ class ImageSourceCache:
                 paths.append(self.directory / row[0])
                 continue
             host = (urlsplit(url).hostname or "").lower()
-            if not any(host == d or host.endswith("." + d) for d in ("qq.com", "qpic.cn", "gtimg.cn", "gtimg.com")):
+            if not (host == "multimedia.nt.qq.com.cn" or any(host == d or host.endswith("." + d) for d in ("qq.com", "qpic.cn", "gtimg.cn", "gtimg.com"))):
                 raise ImageSourceUnavailable("请直接发送或引用 QQ 图片附件，不使用外部图片地址。")
             try:
                 data_url, _ = await downloader(url)

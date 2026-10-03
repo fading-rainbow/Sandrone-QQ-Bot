@@ -193,3 +193,56 @@ async def test_edit_never_falls_back_or_silently_crops_wrong_layout(tmp_path):
     gen.client.images.edit.return_value = SimpleNamespace(data=[SimpleNamespace(b64_json=_encoded_jpeg((1080, 1080)))])
     with pytest.raises(ImageEditMismatch):
         await gen.edit("修改原图", (original,))
+
+
+@pytest.mark.asyncio
+async def test_gemini_generation_uses_chat_completions_with_image_urls(tmp_path: Path) -> None:
+    references = (tmp_path / "face.jpg",)
+    Image.new("RGB", (32, 32), "white").save(references[0])
+    raw_b64 = _encoded_jpeg((64, 64))
+    markdown_reply = f"Here is the image:\n![image](data:image/jpeg;base64,{raw_b64})"
+    mock_choice = SimpleNamespace(message=SimpleNamespace(content=markdown_reply))
+    mock_resp = SimpleNamespace(choices=[mock_choice])
+    chat = SimpleNamespace(completions=SimpleNamespace(create=AsyncMock(return_value=mock_resp)))
+
+    generator = object.__new__(ImageGenerator)
+    generator.model = "gemini-3.1-flash-image"
+    generator.output_dir = tmp_path
+    generator.sandrone_reference_paths = references
+    generator.client = SimpleNamespace(chat=chat)
+
+    result = await generator.generate("桑多涅单人立绘")
+
+    chat.completions.create.assert_awaited_once()
+    kwargs = chat.completions.create.await_args.kwargs
+    assert kwargs["model"] == "gemini-3.1-flash-image"
+    messages = kwargs["messages"]
+    assert len(messages) == 1
+    content = messages[0]["content"]
+    assert any(part.get("type") == "image_url" for part in content)
+    assert any(part.get("type") == "text" and "唯一的身份与造型基准" in part.get("text", "") for part in content)
+    assert result.reference_paths == references
+    assert result.path.is_file()
+
+
+@pytest.mark.asyncio
+async def test_gemini_edit_uses_chat_completions(tmp_path: Path) -> None:
+    original = tmp_path / "source.png"
+    Image.new("RGB", (64, 64), "red").save(original)
+    raw_b64 = _encoded_jpeg((64, 64))
+    markdown_reply = f"Edited:\n![image](data:image/png;base64,{raw_b64})"
+    mock_choice = SimpleNamespace(message=SimpleNamespace(content=markdown_reply))
+    mock_resp = SimpleNamespace(choices=[mock_choice])
+    chat = SimpleNamespace(completions=SimpleNamespace(create=AsyncMock(return_value=mock_resp)))
+
+    generator = object.__new__(ImageGenerator)
+    generator.model = "gemini-3.1-flash-image"
+    generator.output_dir = tmp_path
+    generator.client = SimpleNamespace(chat=chat)
+
+    result = await generator.edit("把原石数量改成65432", (original,))
+
+    chat.completions.create.assert_awaited_once()
+    assert result.layout == "edit"
+    assert result.path.is_file()
+

@@ -889,6 +889,13 @@ class MemoryStore:
         self, conversation_key: str, user_id: str, local_date: str
     ) -> bool:
         with self._lock:
+            # A killed process must not leave today's member permanently marked
+            # as greeted. Only incomplete reservations older than ten minutes.
+            self._conn.execute(
+                "DELETE FROM daily_greetings WHERE conversation_key=? AND user_id=? "
+                "AND local_date=? AND content='' AND created_at < datetime('now', '-10 minutes')",
+                (conversation_key, user_id, local_date),
+            )
             cursor = self._conn.execute(
                 """
                 INSERT OR IGNORE INTO daily_greetings(
@@ -899,6 +906,15 @@ class MemoryStore:
             )
             self._conn.commit()
         return cursor.rowcount > 0
+
+    def release_daily_greeting(self, conversation_key: str, user_id: str, local_date: str) -> None:
+        with self._lock:
+            self._conn.execute(
+                "DELETE FROM daily_greetings WHERE conversation_key=? AND user_id=? "
+                "AND local_date=? AND content=''",
+                (conversation_key, user_id, local_date),
+            )
+            self._conn.commit()
 
     def save_daily_greeting(
         self, conversation_key: str, user_id: str, local_date: str, content: str

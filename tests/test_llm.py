@@ -10,6 +10,46 @@ from PIL import Image
 from talk_bot.llm import LLMClient
 
 
+@pytest.mark.parametrize("reason", ["length", "content_filter"])
+def test_partial_completion_is_never_accepted(reason):
+    response = SimpleNamespace(choices=[SimpleNamespace(finish_reason=reason)])
+    with pytest.raises(RuntimeError, match="未完成"):
+        LLMClient._require_complete(response, "attribution_guard")
+
+
+def test_partial_responses_output_is_rejected():
+    with pytest.raises(RuntimeError, match="未完成"):
+        LLMClient._require_complete(SimpleNamespace(status="incomplete"), "summary")
+
+
+def test_gemini_reserves_thinking_without_changing_other_models():
+    client = object.__new__(LLMClient)
+    client.model = "gemini-3-flash"
+    assert client._completion_budget(350) == 4446
+    assert client._completion_budget(16) == 4112
+    client.model = "gpt-test"
+    assert client._completion_budget(350) == 350
+
+
+@pytest.mark.asyncio
+async def test_truncated_text_raises_instead_of_returning_fragment():
+    from talk_bot.memory import StoredMessage
+    client = _client_with_transport(lambda request: httpx.Response(200))
+    client.api_mode = "chat_completions"
+    client.model = "gemini-3-flash"
+    client.client.chat.completions.create = AsyncMock(return_value=SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content="原文、摘要再"), finish_reason="length")],
+        usage=None))
+    try:
+        with pytest.raises(RuntimeError, match="未完成"):
+            await client.compact_reply(instructions="校验", messages=[StoredMessage("user", "评价")],
+                                       max_output_tokens=350, purpose="attribution_guard")
+        assert client.client.chat.completions.create.call_args.kwargs["max_completion_tokens"] == 4446
+    finally:
+        await client.client.close()
+        await client.vision_http.aclose()
+
+
 def _png_bytes(size: tuple[int, int] = (2, 2)) -> bytes:
     output = io.BytesIO()
     Image.new("RGB", size, "red").save(output, format="PNG")

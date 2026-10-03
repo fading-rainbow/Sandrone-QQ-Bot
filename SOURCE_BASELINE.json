@@ -1,0 +1,14 @@
+{
+  "project": "Sandrone-QQ-Bot",
+  "source_kind": "current local application source; live application hashes verified",
+  "development_base": null,
+  "production": {
+    "type": "systemd Python source",
+    "application_files": 9,
+    "identity_defaults": "environment-only in public source"
+  },
+  "public_sanitization": [
+    "src/talk_bot/config.py"
+  ],
+  "scope": "source only; no runtime config, database, login, or deployment"
+}
