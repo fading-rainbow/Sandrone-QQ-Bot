@@ -83,6 +83,8 @@ Copy-Item .env.example .env
 - `WEB_SEARCH_CACHE_SECONDS` 默认 1800；普通成员检索冷却默认 30 秒，全群默认 10 秒。
 - 示例配置用 `IMAGE_MODEL=gpt-image-2.6-sunburst`；`IMAGE_COOLDOWN_SECONDS` 默认为 180。使用 OpenAI Images API，普通生图走 `/images/generations`，身份参考和原图编辑走 `/images/edits`。
 - `IMAGE_API_KEY` / `IMAGE_BASE_URL` 单独配置生图通道；留空时复用 `OPENAI_API_KEY` / `OPENAI_BASE_URL`。Gemini 专用通道不一定支持 Images API，切换前必须实测生成和编辑。`OPENAI_MODEL` 及其聊天/识图通道不随生图设置改变。
+- 明确要求「GIF／动图」时走循环动画路径。GPT Image 2.6 优先请求原生 GIF；如果当前上游明确回复未启用 GIF，则请求六格连续分镜，用 Pillow 切成六帧并合成循环 GIF。参考图仍按角色绑定，输出必须通过帧变化、循环、文件大小及实际抽帧视觉复核；不把静态拼图或首帧当成动图发送。
+- 动图沿用 QQ 富媒体被动回复，不改变主动消息权限。原图精确编辑仍输出静态图；需要带图做动图时，明确指定附件为人物参考。
 - `SANDRONE_REFERENCE_IMAGES` 是逗号分隔的桑多涅参考图；默认使用项目内的脸部与服装参考。
 - `BOT_OWNER_IDS` 是最高指挥身份列表，应同时配置 QQ 号与平台实际提供的 `openid`。
 - `ALLOWED_GROUP_IDS` 限制唯一服务群，应同时配置群号与平台实际提供的群 `openid`。

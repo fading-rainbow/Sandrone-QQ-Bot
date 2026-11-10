@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import io
+import logging
 import math
 import re
 import time
@@ -14,8 +16,13 @@ import httpx
 from openai import AsyncOpenAI
 from PIL import Image
 
+from .animation import (
+    FRAME_COUNT, FRAME_DURATION_MS, FRAME_SIZE, STORYBOARD_SIZE,
+    ImageAnimationError, encode_storyboard, read_gif,
+)
 from .character_refs import CharacterReference, reference_mapping
 
+logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class ImageLayout:
@@ -91,6 +98,7 @@ class ImageGenerator:
         sandrone_reference_paths: tuple[Path, ...] = (),
     ) -> None:
         self.model = model
+        self._gif_disabled: set[bool] = set()
         self.output_dir = output_dir
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.sandrone_reference_paths = tuple(path.resolve() for path in sandrone_reference_paths)
@@ -109,7 +117,9 @@ class ImageGenerator:
     def _cleanup_stale_files(self, *, now: float | None = None) -> int:
         current = time.time() if now is None else now
         removed = 0
-        for path in list(self.output_dir.glob("sandrone-*.jpg")) + list(self.output_dir.glob("sandrone-*.png")):
+        for path in self.output_dir.glob("sandrone-*"):
+            if path.suffix not in {".jpg", ".png", ".gif"}:
+                continue
             try:
                 if current - path.stat().st_mtime >= 3600:
                     path.unlink(missing_ok=True)
@@ -162,6 +172,65 @@ class ImageGenerator:
             safety_rewritten=safety_rewritten,
             character_references=character_references or (),
         )
+
+    async def generate_animation(
+        self, prompt: str, *, identity_retry: bool = False,
+        character_references: tuple[CharacterReference, ...] | None = None,
+        retry_feedback: str = "",
+    ) -> GeneratedImage:
+        if self._is_gemini_model():
+            raise ImageAnimationError("当前生图通道不支持工坊的 GIF 链路")
+        refs = (tuple(ref.path for ref in character_references)
+                if character_references is not None else self._references_for_prompt(prompt))
+        final = self._compose_prompt(
+            prompt, SQUARE, bool(refs), identity_retry, character_references, retry_feedback,
+        )
+        final += "\n这是循环短动画：角色特征、视角、比例和背景前后一致，动作连续，末帧自然衔接首帧。"
+        using_edits = bool(refs)
+        raw = None
+        if using_edits not in self._gif_disabled:
+            try:
+                raw = await self._animation_request(
+                    final + "\n输出一段连续动画，单帧不是分镜拼图。",
+                    refs, size=f"{FRAME_SIZE}x{FRAME_SIZE}", output_format="gif",
+                    extra_body={"frame_count": FRAME_COUNT, "frame_duration_ms": FRAME_DURATION_MS},
+                )
+            except Exception as exc:
+                # Only this explicit capability error permits a different encoding path.
+                if getattr(exc, "status_code", None) != 400 or "gif output is not enabled" not in str(exc).lower():
+                    raise
+                self._gif_disabled.add(using_edits)
+                logger.info("原生 GIF 未启用，使用分镜合成 endpoint=%s", "edits" if using_edits else "generations")
+        if raw is None:
+            board = await self._animation_request(
+                final + "\n当前请求的是动画的源分镜图，不是最终动图。严格画满 1536×1024 的 3列×2行均匀网格，"
+                "每格512×512，按先从左到右再到下一行排列恰好六个连续时间点。每格都是完整的独立画面，"
+                "统一机位、缩放和背景；人物不得跨格。无外边距、无分隔线、无编号、无文字；"
+                "不要画成单张跨格大图，也不要用六个相同姿势。",
+                refs, size=STORYBOARD_SIZE, output_format="png",
+            )
+            raw = await asyncio.to_thread(encode_storyboard, board)
+        else:
+            await asyncio.to_thread(read_gif, raw)
+        path = self.output_dir / f"sandrone-{uuid.uuid4().hex}.gif"
+        path.write_bytes(raw)
+        return GeneratedImage(path, "animation", refs, character_references=character_references or ())
+
+    async def _animation_request(
+        self, prompt: str, refs: tuple[Path, ...], *,
+        size: str, output_format: str, extra_body: dict | None = None,
+    ) -> bytes:
+        kwargs = dict(model=self.model, prompt=prompt, size=size, quality="medium",
+                      output_format=output_format, n=1)
+        if extra_body:
+            kwargs["extra_body"] = extra_body
+        if refs:
+            with ExitStack() as stack:
+                files = [stack.enter_context(path.open("rb")) for path in refs]
+                response = await self.client.images.edit(image=files, **kwargs)
+        else:
+            response = await self.client.images.generate(**kwargs)
+        return await self._response_bytes(response)
 
     def _is_gemini_model(self) -> bool:
         name = str(getattr(self, "model", "")).lower()

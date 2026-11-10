@@ -28,6 +28,7 @@ from qqbot_agent_sdk import (
 )
 from qqbot_agent_sdk.dto import parse_message
 
+from .animation import ImageAnimationError, animation_requested
 from .character_refs import CharacterReferenceLibrary, CharacterSubject
 from .image_gen import ImageContentPolicyError, ImageEditMismatch, ImageGenerator
 from .image_sources import ImageSourceCache, ImageSourceUnavailable, is_edit_request
@@ -332,9 +333,10 @@ class QQBotRunner:
                 event.chat_id,
             )
 
-    async def _send_media_with_reply_fallback(self, event, file_info: str) -> None:
+    async def _send_media_with_reply_fallback(self, event, file_info: str, *, animated: bool = False) -> None:
         async def post(reply_to: str | None) -> None:
             message = MessageToCreate(
+                content=" " if animated else "",
                 msg_type=QQMessageType.RICH_MEDIA,
                 msg_seq=self.api.next_msg_seq(),
                 msg_id=reply_to or "",
@@ -348,7 +350,7 @@ class QQBotRunner:
         try:
             await post(event.message_id)
         except Exception as exc:
-            if not is_expired_reply_error(exc):
+            if animated or not is_expired_reply_error(exc):
                 raise
             logger.warning(
                 "QQ 图片回复 msg_id 已过期，降级为普通消息 message_id=%s",
@@ -789,6 +791,21 @@ class QQBotRunner:
             self.service.remember_assistant(incoming, refusal)
             await self._send_reply_text(event, refusal)
             return
+        animated = animation_requested(getattr(incoming, "content", prompt)) or animation_requested(prompt)
+        editing = is_edit_request(
+            getattr(incoming, "content", prompt),
+            has_image=bool(getattr(incoming, "image_urls", ()) or getattr(incoming, "quoted_image_urls", ())),
+        )
+        # Explicit character-reference composition is a new scene, not a numeric/layout source edit.
+        if re.search(r"(?:人物|角色|身份|长相)参考|参考(?:人物|角色|身份|长相)", prompt) and not re.search(
+            r"修改|编辑|修图|改成|改为|替换|去掉|删掉|去除|移除|抠图|扩图", prompt,
+        ):
+            editing = False
+        if animated and editing:
+            refusal = "原图精确编辑暂不导出 GIF。要做动图，请把图片指定为人物参考，再说明想要的动作。"
+            self.service.remember_assistant(incoming, refusal)
+            await self._send_reply_text(event, refusal)
+            return
         allowed, remaining, claimed_at = self.service.memory.claim_rate_limit(
             "image:global", self.image_cooldown_seconds
         )
@@ -833,15 +850,6 @@ class QQBotRunner:
         path = None
         delivered = False
         source_workspace = None
-        editing = is_edit_request(
-            getattr(incoming, "content", prompt),
-            has_image=bool(getattr(incoming, "image_urls", ()) or getattr(incoming, "quoted_image_urls", ())),
-        )
-        # Explicit character-reference composition is a new scene, not a numeric/layout source edit.
-        if re.search(r"(?:人物|角色|身份|长相)参考|参考(?:人物|角色|身份|长相)", prompt) and not re.search(
-            r"修改|编辑|修图|改成|改为|替换|去掉|删掉|去除|移除|抠图|扩图", prompt,
-        ):
-            editing = False
         source_paths = ()
         character_references = None
         try:
@@ -891,7 +899,7 @@ class QQBotRunner:
                     )
                 else:
                     resolved_prompt = await self.service.prepare_image_prompt(incoming, prompt)
-            job.phase = "模型渲染"
+            job.phase = "渲染动图" if animated else "模型渲染"
             self._update_image_job_safely(job, phase=job.phase)
             progress = "原图收到了。只动你指定的地方，别催坏我的精度。" if editing else "……知道了。别催，我的人偶正在构图。"
             await self._send_reply_text(event, progress)
@@ -909,7 +917,8 @@ class QQBotRunner:
                         "character_references": character_references,
                         "retry_feedback": actual_description if attempt else "",
                     }
-                    generated = await self.image_generator.generate(
+                    render = self.image_generator.generate_animation if animated else self.image_generator.generate
+                    generated = await render(
                         resolved_prompt, identity_retry=attempt > 0, **grounding,
                     )
                 safety_rewritten = safety_rewritten or generated.safety_rewritten
@@ -931,6 +940,8 @@ class QQBotRunner:
                     logger.exception("检查生成图片失败 message_id=%s", event.message_id)
                     if editing:
                         raise ImageEditMismatch("原图编辑校验不可用") from exc
+                    if animated:
+                        raise ImageAnimationError("动图视觉复核不可用") from exc
                     if generated.identity_sensitive:
                         raise ImageIdentityVerificationUnavailable(
                             "Sandrone identity verification failed"
@@ -938,10 +949,10 @@ class QQBotRunner:
                     actual_description = "成图视觉复核失败；只保留构图解析，不能确认角色还原度。"
                     break
 
-                if (not editing and not generated.identity_sensitive) or inspection.accepted:
+                if (not editing and not animated and not generated.identity_sensitive) or inspection.accepted:
                     break
                 logger.warning(
-                    "角色身份复核未通过 job_id=%s attempt=%d detail=%s",
+                    "成图复核未通过 job_id=%s attempt=%d detail=%s",
                     job_id,
                     attempt + 1,
                     actual_description[:300],
@@ -949,10 +960,12 @@ class QQBotRunner:
                 if attempt == 1:
                     if editing:
                         raise ImageEditMismatch(actual_description)
+                    if animated:
+                        raise ImageAnimationError(actual_description)
                     raise ImageIdentityMismatch(actual_description)
                 path.unlink(missing_ok=True)
                 path = None
-                job.phase = "原图编辑校准" if editing else "身份校准重绘"
+                job.phase = "动图校准重绘" if animated else ("原图编辑校准" if editing else "身份校准重绘")
                 self._update_image_job_safely(job, phase=job.phase)
 
             if generated is None or path is None:
@@ -965,9 +978,12 @@ class QQBotRunner:
                 source=str(path),
                 file_type=MEDIA_TYPE_IMAGE,
             )
-            await self._send_media_with_reply_fallback(event, file_info)
+            if animated:
+                await self._send_media_with_reply_fallback(event, file_info, animated=True)
+            else:
+                await self._send_media_with_reply_fallback(event, file_info)
             delivered = True
-            if getattr(self, "image_sources", None) is not None:
+            if not animated and getattr(self, "image_sources", None) is not None:
                 try:
                     self.image_sources.store(
                         incoming.conversation_key, incoming.user_id, "result:" + incoming.event_id,
@@ -1033,6 +1049,8 @@ class QQBotRunner:
                 failure = str(exc)
             elif isinstance(exc, ImageEditMismatch):
                 failure = "这次修改没通过原图核对，我没有把不合格的成图发出来。稍后可以重试，或把要改的位置说得更具体些。"
+            elif isinstance(exc, ImageAnimationError):
+                failure = "这次没有得到通过复核的循环 GIF，工坊没有把静态分镜当动图发出。"
             elif isinstance(exc, ImageIdentityMismatch):
                 failure = (
                     "这次仍有角色偏离了对应参考档案。我不会把仿冒品递给你——"
@@ -1048,6 +1066,8 @@ class QQBotRunner:
                     "这次画面描述被上游规则拦下了，连无暧昧的安全改写也没有通过。"
                     "换成衣着完整、保持距离的日常互动，我再替你开工。"
                 )
+            elif animated and job.phase == "上传 QQ":
+                failure = "循环 GIF 已生成并通过复核，但 QQ 没有接收这条富媒体消息。"
             else:
                 failure = "这次生成或传送链路失败了。工坊已经释放任务锁，稍后可以重试。"
             self.service.remember_assistant(incoming, failure)

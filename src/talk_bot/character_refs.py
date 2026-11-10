@@ -19,6 +19,8 @@ from PIL import Image, ImageOps
 
 from .image_sources import ImageSourceUnavailable
 
+_HOYO_LOCALIZED_NAMES = {"columbina": "哥伦比娅"}
+
 
 class CharacterReferenceUnavailable(ImageSourceUnavailable):
     pass
@@ -227,7 +229,7 @@ class CharacterReferenceLibrary:
             canonical, source, facts = "桑多涅", "用户指定的本机角色参考档案", "桑多涅 / Sandrone；外观以参考像素为准"
         elif base_genshin and subject.kind not in {"real"}:
             try:
-                canonical, source, facts, blobs = await self._hoyo(name)
+                canonical, source, facts, blobs = await self._hoyo(_HOYO_LOCALIZED_NAMES.get(name.casefold(), name))
             except Exception:
                 # Tests/legacy integrations without a lookup model retain strict HoYo-only behavior.
                 if self.lookup.model is None:
