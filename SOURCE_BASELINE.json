@@ -1,28 +1,29 @@
 {
   "project": "Sandrone-QQ-Bot",
-  "source_kind": "current local application source; production source release unchanged; runtime model cutover live verified",
+  "source_kind": "current local application source; GIF production release and runtime models independently verified",
   "development_base": null,
   "production": {
     "type": "systemd Python source",
-    "application_files": 11,
+    "application_files": 12,
     "identity_defaults": "environment-only in public source",
-    "source_commit": "9c99cf3584077619a89fa9712be401c3f3a0930d",
-    "release_tag": "sandrone-person-grounding-20261003",
-    "verified_at": "2026-11-10T00:45:04.340520+00:00",
+    "source_commit": "283594f29a5da9cc89d50d426d6a317d0facaa2b",
+    "release_tag": "sandrone-gif-20261110",
+    "verified_at": "2026-11-10T01:13:56.904998+00:00",
     "image_model": "gpt-image-2.6-sunburst",
     "language_model": "gpt-6-luna",
     "application_sha256": {
-      "src/talk_bot/character_refs.py": "41cad0cae1c6c8eaae4eb7247df00d1a0137917574586b560a5bd6a4c0a36f07",
+      "src/talk_bot/character_refs.py": "8daa96cac839b088adb74d0650fb426fcf753b758e9468bae259130982c08e6e",
       "src/talk_bot/config.py": "2e1466468a0a2283d5ba8b4f40175aa9d0eaef8ba31686165629fab4fe06d051",
-      "src/talk_bot/image_gen.py": "9627b530a57d9272b4def4505ba7368c81f3546c53e38cc90728f760ed615103",
+      "src/talk_bot/image_gen.py": "4699ae3178936badcdd187dd9e637a8551108fb2a7b66789dfac2be666313e2b",
       "src/talk_bot/image_sources.py": "cee71078498a620886aa830f594ebdc8e41da186eae8f38e89493f03d4e0292b",
       "src/talk_bot/llm.py": "0763d4472ec64198088e3fd2cdc26bc37db223999a05443c0a57b1e7b7d72de1",
       "src/talk_bot/main.py": "0ec74ca4d050c6939966328705aa168670eeb2379d9a111c50a3361bbcdf2ecd",
       "src/talk_bot/memory.py": "afab4e9121f4db9f931766bb27a76cfa49e302eaa1d81c1449e909cc20f7abe4",
       "src/talk_bot/person_lookup.py": "d0c3b6798e03485f2d39be18783f0f9a5f9e759381c2ecc3356029be4ce16a0d",
-      "src/talk_bot/qq_adapter.py": "82de5b980d9bb7eeefd6d3612b9c1a18e60bcbcc1ad89c43a86463d268786b09",
-      "src/talk_bot/service.py": "5b2c570fd77653aa335f343b5e005d13555f12d0815a95055e0e652d29f7d887",
-      "src/talk_bot/__init__.py": "5302bebadfc57a68858354513bb6ad0454baa0d778ebd12e579329ff372d8e53"
+      "src/talk_bot/qq_adapter.py": "9f515d3b67f2202dc812dc9264094959dabf27c4cd55acee3f4f1f0eec224a5e",
+      "src/talk_bot/service.py": "6e1ef4cc2354f6fb6c5f490161506d570cc92aa3b557ea2ed44f38241841a7be",
+      "src/talk_bot/__init__.py": "5302bebadfc57a68858354513bb6ad0454baa0d778ebd12e579329ff372d8e53",
+      "src/talk_bot/animation.py": "914f6cf311e316104e6a92895aea707df599930942a6b5c7fa06ebea4927a681"
     },
     "verification": {
       "source_hashes_match": true,
@@ -32,12 +33,20 @@
       "public_responses_stream_completed": true,
       "plain_generation_two_input_edit_and_character_reference_passed": true,
       "edited_image_vision_check_passed": true,
-      "source_files_redeployed": false,
+      "source_files_redeployed": true,
       "new_dependencies": 0,
       "image_and_chat_credentials_unchanged": true,
       "database_or_history_replaced": false,
       "qq_test_messages_sent": 0,
-      "production_history_written_by_checks": false
+      "production_history_written_by_checks": false,
+      "gif_plain_and_two_reference_generation_passed": true,
+      "gif_verified_frames": 6,
+      "gif_multi_frame_vision_passed": true,
+      "qq_gif_uploads_passed": 2,
+      "qq_client_playback_verified": false,
+      "runtime_configuration_unchanged": true,
+      "database_identity_unchanged": true,
+      "python_tests_passed": 308
     },
     "image_release_tag": "sandrone-image-sunburst-20261003",
     "known_limitations": [
@@ -45,7 +54,11 @@
       "Some cross-identity requests can be rejected by upstream image moderation; failed images are not delivered"
     ],
     "language_reasoning_effort": "high",
-    "language_api_mode": "responses"
+    "language_api_mode": "responses",
+    "previous_source_release": {
+      "source_commit": "9c99cf3584077619a89fa9712be401c3f3a0930d",
+      "release_tag": "sandrone-person-grounding-20261003"
+    }
   },
   "public_sanitization": [
     "src/talk_bot/config.py"
