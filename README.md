@@ -72,7 +72,7 @@ Copy-Item .env.example .env
 ## 配置说明
 
 - `OPENAI_BASE_URL` 必须包含 API 根路径，官方服务为 `https://api.openai.com/v1`。
-- `OPENAI_API_MODE=chat_completions` 是默认值；支持 Responses 工具的通道可改为 `responses`。
+- 示例配置用 `OPENAI_MODEL=gpt-6-luna`、`OPENAI_API_MODE=responses` 与 `REASONING_EFFORT=high`。仍使用旧兼容通道时，需显式选择该通道支持的模型和 API 模式。
 - `HISTORY_MESSAGES` 是每次发给模型的最近消息数，默认 30；数据库会保留最多 4000 条，且绝不因容量上限删除尚未进入摘要的消息。滚动摘要最多 2400 个中文字符；显式长期事实单条最多 1000 字、默认读取最近 60 条。
 - 普通短问句、图片追问和承接问句保留配置内的完整近期上下文及滚动记忆，不再按“20 字以内”裁成当前一句，也不再将承接问句限制为 8 条。仅明确的自我评价、纯表情和简短情绪采用窄上下文；归属校验共享主回复实际获得的历史、事实与印象证据，不能因自己缺少上下文否认记忆。
 - `SUMMARY_TRIGGER_MESSAGES` 控制累计多少条新消息后更新一次滚动摘要，默认 20。
@@ -81,7 +81,7 @@ Copy-Item .env.example .env
 - `WEB_SEARCH_ENABLED` 控制网页检索；默认开启，仅在 Responses API 模式且中转支持
   `web_search` 工具时可用。
 - `WEB_SEARCH_CACHE_SECONDS` 默认 1800；普通成员检索冷却默认 30 秒，全群默认 10 秒。
-- `IMAGE_MODEL` 默认为 `gpt-image-2.5-sunburst`；`IMAGE_COOLDOWN_SECONDS` 默认为 180。使用 OpenAI Images API，普通生图走 `/images/generations`，身份参考和原图编辑走 `/images/edits`。
+- 示例配置用 `IMAGE_MODEL=gpt-image-2.6-sunburst`；`IMAGE_COOLDOWN_SECONDS` 默认为 180。使用 OpenAI Images API，普通生图走 `/images/generations`，身份参考和原图编辑走 `/images/edits`。
 - `IMAGE_API_KEY` / `IMAGE_BASE_URL` 单独配置生图通道；留空时复用 `OPENAI_API_KEY` / `OPENAI_BASE_URL`。Gemini 专用通道不一定支持 Images API，切换前必须实测生成和编辑。`OPENAI_MODEL` 及其聊天/识图通道不随生图设置改变。
 - `SANDRONE_REFERENCE_IMAGES` 是逗号分隔的桑多涅参考图；默认使用项目内的脸部与服装参考。
 - `BOT_OWNER_IDS` 是最高指挥身份列表，应同时配置 QQ 号与平台实际提供的 `openid`。
@@ -91,7 +91,13 @@ Copy-Item .env.example .env
 - 全量群消息还要求群主在手机 QQ 的机器人设置中授予“获取群内全部消息”；否则平台只会推送 @ 消息。
 - `.env` 和 `data/` 已被 Git 忽略。不要把 AppSecret 或 API Key 提交到仓库。
 
-## 当前线上基线（2026-10-03）
+## 当前线上模型（2026-11-10）
+
+- Gemini Free 反代再次发生上游限流和长时间调度失败，聊天与识图改为 GPT‑6 Luna High（Responses）；普通生图、原图编辑、身份参考改为 GPT Image 2.6 Sunburst（独立 Images API）。
+- 已验证真实聊天、识图、内部路由、公网流式、普通生图、双图编辑与桑多涅双参考图。QQ 服务已连接；验收未向生产群发送测试消息。
+- 这次是模型与网关配置切换，机器人 Python 生产源码未替换。源码发布标记、模型运行基线及验收范围见 `SOURCE_BASELINE.json`。
+
+## 既有源码上线基线（2026-10-03）
 
 - 通用人物资料与像素参考链路已获授权上线。聊天/视觉复核仍为 `gemini-3.8-flash`，生图仍为 `gpt-image-2.5-sunburst`，独立通道与凭据不变。
 - 线上 11 个应用文件的 SHA256 与源码提交 `9c99cf3584077619a89fa9712be401c3f3a0930d` 一致，生产标记 `sandrone-person-grounding-20261003` 已同步 GitHub；详见 `SOURCE_BASELINE.json`。
@@ -100,7 +106,7 @@ Copy-Item .env.example .env
 
 ### 已上线链路：通用人物资料与像素参考
 
-- 上线源码已包含上述官方/百科/用户指定像素参考、逐人物结构化视觉验收和一次校准重试；模型仍为 `gemini-3.8-flash` 与 `gpt-image-2.5-sunburst`。自动公共检索目前接 HoYoWiki 与中英文 Wikipedia；不是保证所有人物都能搜到，其他人物同样走澄清/用户参考并核对的策略。无需重型搜索服务或新增依赖。
+- 上线源码已包含上述官方/百科/用户指定像素参考、逐人物结构化视觉验收和一次校准重试。自动公共检索目前接 HoYoWiki 与中英文 Wikipedia；不是保证所有人物都能搜到，其他人物同样走澄清/用户参考并核对的策略。无需重型搜索服务或新增依赖。
 - 本地及导出源码测试包含官方资料下载/过期刷新、模糊/缺失资料拒绝、像素实际上传、逐角色验收、一次重试及原图编辑隔离。真实接口隔离验收已拒绝旧的双角/双辫沃雅妮莎图片；同一海边请求的新图第一版通过两名角色的参考核对，未向 QQ 发送测试消息、未写生产聊天历史。
 - 通用人物扩展已实测非原神游戏人物与历史人物的百科身份/图片获取、像素参考可用性、构图规划、用户参考任务隔离及未知私人身份追问；原神回归复核通过。跨人物组合的真实生图测试被上游审核拒绝，未发送图片，不能把参考链路通过写成整条生图成功。上游拒绝不绕过，仍按已有失败处理释放任务/冷却。
 - 开发分支与生产版本分开记录。此次已按明确授权部署并核实生产基线；后续 main 的文档或开发提交不会自动改变生产版本，源码同步本身仍不授权重启或部署。

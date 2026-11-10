@@ -1,6 +1,6 @@
 {
   "project": "Sandrone-QQ-Bot",
-  "source_kind": "current local application source; universal person reference grounding deployed and live verified; production source release distinct from later development documentation",
+  "source_kind": "current local application source; production source release unchanged; runtime model cutover live verified",
   "development_base": null,
   "production": {
     "type": "systemd Python source",
@@ -8,9 +8,9 @@
     "identity_defaults": "environment-only in public source",
     "source_commit": "9c99cf3584077619a89fa9712be401c3f3a0930d",
     "release_tag": "sandrone-person-grounding-20261003",
-    "verified_at": "2026-10-03T05:25:45.296746+00:00",
-    "image_model": "gpt-image-2.5-sunburst",
-    "language_model": "gemini-3.8-flash",
+    "verified_at": "2026-11-10T00:45:04.340520+00:00",
+    "image_model": "gpt-image-2.6-sunburst",
+    "language_model": "gpt-6-luna",
     "application_sha256": {
       "src/talk_bot/character_refs.py": "41cad0cae1c6c8eaae4eb7247df00d1a0137917574586b560a5bd6a4c0a36f07",
       "src/talk_bot/config.py": "2e1466468a0a2283d5ba8b4f40175aa9d0eaef8ba31686165629fab4fe06d051",
@@ -27,20 +27,15 @@
     "verification": {
       "source_hashes_match": true,
       "qq_gateway_ready": true,
-      "startup_tracebacks": 0,
       "systemd_restarts": 0,
-      "deployed_package_import_path_confirmed": true,
-      "preflight_checks_passed": 3,
-      "post_deploy_live_checks_passed": 4,
-      "two_person_sunburst_generation_and_identity_review_passed": true,
-      "live_generation_attempts": 1,
-      "runtime_config_changes": 0,
+      "chat_vision_and_compact_router_passed": true,
+      "public_responses_stream_completed": true,
+      "plain_generation_two_input_edit_and_character_reference_passed": true,
+      "edited_image_vision_check_passed": true,
+      "source_files_redeployed": false,
       "new_dependencies": 0,
       "image_and_chat_credentials_unchanged": true,
-      "models_unchanged": true,
       "database_or_history_replaced": false,
-      "database_identity_unchanged": true,
-      "database_quick_check": "ok",
       "qq_test_messages_sent": 0,
       "production_history_written_by_checks": false
     },
@@ -48,7 +43,9 @@
     "known_limitations": [
       "Auto public lookup uses HoYoWiki and Chinese/English Wikipedia; ambiguous/unavailable people need supplied references",
       "Some cross-identity requests can be rejected by upstream image moderation; failed images are not delivered"
-    ]
+    ],
+    "language_reasoning_effort": "high",
+    "language_api_mode": "responses"
   },
   "public_sanitization": [
     "src/talk_bot/config.py"
